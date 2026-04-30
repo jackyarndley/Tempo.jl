@@ -7,11 +7,19 @@ _TimeNodeFunAD1{T} = Autodiff.ForwardDiff.Dual{_TagAD1{T}, T, 1}
 _TagAD2{T} = Autodiff.ForwardDiff.Tag{Autodiff.JSMDDiffTag, _TimeNodeFunAD1{T}}
 _TimeNodeFunAD2{T} = Autodiff.ForwardDiff.Dual{_TagAD2{T}, _TimeNodeFunAD1{T}, 1}
 
-TimeNodeWrappers{T} = FunctionWrappersWrapper{Tuple{
-    FunctionWrapper{T, Tuple{T}}, 
-    FunctionWrapper{_TimeNodeFunAD1{T}, Tuple{_TimeNodeFunAD1{T}}}, 
-    FunctionWrapper{_TimeNodeFunAD2{T}, Tuple{_TimeNodeFunAD2{T}}}
-}, true}
+const TimeNodeWrappers = FunctionWrappersWrapper
+
+function _time_node_wrapper(::Type{T}, fun::Function) where {T}
+    argtypes = (
+        Tuple{T},
+        Tuple{_TimeNodeFunAD1{T}},
+        Tuple{_TimeNodeFunAD2{T}}
+    )
+    rettypes = (T, _TimeNodeFunAD1{T}, _TimeNodeFunAD2{T})
+    return FunctionWrappersWrapper(
+        fun, argtypes, rettypes; cache = NoCache(), policy = AllowAll()
+    )
+end
 
 """
     TimeScaleNode{T} <: AbstractGraphNode 
@@ -25,15 +33,21 @@ Define a timescale.
 - `ffp` -- offest function from the parent timescale
 - `ftp` -- offset function to the parent timescale
 """
-struct TimeScaleNode{T} <: AbstractJSMDGraphNode
+struct TimeScaleNode{T,FFP<:TimeNodeWrappers,FTP<:TimeNodeWrappers} <: AbstractJSMDGraphNode
     name::Symbol
     id::Int
     parentid::Int
-    ffp::TimeNodeWrappers{T}
-    ftp::TimeNodeWrappers{T}
+    ffp::FFP
+    ftp::FTP
 end
 
 get_node_id(s::TimeScaleNode) = s.id
+
+function TimeScaleNode{T}(
+        name::Symbol, id::Int, parentid::Int, ffp::FFP, ftp::FTP
+    ) where {T,FFP<:TimeNodeWrappers,FTP<:TimeNodeWrappers}
+    return TimeScaleNode{T,FFP,FTP}(name, id, parentid, ffp, ftp)
+end
 
 function Base.show(io::IO, s::TimeScaleNode{T}) where {T}
     pstr = "TimeScaleNode{$T}(name=$(s.name), id=$(s.id)"
@@ -303,21 +317,13 @@ function add_timescale!(
         end
     end
 
-    # Create the function wrappers for the forward and backward transformation
-    outs = (T, _TimeNodeFunAD1{T}, _TimeNodeFunAD2{T})
-    inps = map(x->Tuple{x}, outs)
-
-    wffp = map(inps, outs) do A, R 
-        FunctionWrapper{R, A}(ffp)
-    end;
-
-    wftp = map(inps, outs) do A, R 
-        FunctionWrapper{R, A}(isnothing(ftp) ? _zero_offset : ftp)
-    end
-
     # Create a new timescale node 
     tsnode = TimeScaleNode{T}(
-        name, id, pid, TimeNodeWrappers{T}(wffp), TimeNodeWrappers{T}(wftp)
+        name,
+        id,
+        pid,
+        _time_node_wrapper(T, ffp),
+        _time_node_wrapper(T, isnothing(ftp) ? _zero_offset : ftp)
     )
 
     # Insert the new timescale in the graph

@@ -1,7 +1,6 @@
 module Tempo
 
-using FunctionWrappersWrappers: FunctionWrappersWrapper, 
-                                FunctionWrappers.FunctionWrapper
+using FunctionWrappersWrappers: FunctionWrappersWrapper, AllowAll, NoCache
 
 using JSMDInterfaces.Errors: AbstractGenericException, @custom_error
 
