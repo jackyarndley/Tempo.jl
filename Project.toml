@@ -11,8 +11,11 @@ Pkg = "44cfe95a-1eb2-52ea-b672-e2afdf69b78f"
 PrecompileTools = "aea7be01-6a6a-4083-8856-8a6e6704d82a"
 SMDGraphs = "b792745b-7241-45be-ba96-70eb67e8468f"
 
+[sources]
+JSMDUtils = {rev = "main", url = "https://github.com/jackyarndley/JSMDUtils.jl"}
+
 [compat]
-FunctionWrappersWrappers = "0.1, 1"
+FunctionWrappersWrappers = "1"
 JSMDInterfaces = "1.5"
 JSMDUtils = "1"
 PrecompileTools = "1"
