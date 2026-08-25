@@ -1,0 +1,214 @@
+@inline _conversion_error(from, to) = EpochConversionError(
+    "cannot convert time from the timescale $(typeof(from)) to $(typeof(to)).",
+)
+
+@inline function _resolve_route(
+    system::TimeSystem,
+    from::AbstractTimeScale,
+    to::AbstractTimeScale,
+)
+    from_id = timescale_alias(from)
+    to_id = timescale_alias(to)
+    if isnothing(from_id) || isnothing(to_id) ||
+       !has_timescale(system, from_id) || !has_timescale(system, to_id)
+        throw(_conversion_error(from, to))
+    end
+    path = get_path(timescales(system), from_id, to_id)
+    isempty(path) && throw(_conversion_error(from, to))
+    return path
+end
+
+# Same-scale conversion is intentionally trivial, including for scale aliases that are not
+# registered in a particular system.
+@inline apply_offsets(
+    ::TimeSystem,
+    seconds::Number,
+    ::S,
+    ::S,
+) where {S<:AbstractTimeScale} = seconds
+
+function apply_offsets(
+    system::TimeSystem,
+    seconds::Number,
+    from::AbstractTimeScale,
+    to::AbstractTimeScale,
+)
+    return apply_offsets(system, seconds, _resolve_route(system, from, to))
+end
+
+function apply_offsets(system::TimeSystem, seconds::Number, path::Vector{Int})
+    isempty(path) && throw(EpochConversionError("cannot apply an empty time-conversion route."))
+    length(path) == 1 && return seconds
+
+    result = seconds
+    current = get_mappednode(system.scales, path[1])
+    @inbounds for index in 2:length(path)
+        following = get_mappednode(system.scales, path[index])
+        result += apply_offsets(result, current, following)
+        current = following
+    end
+    return result
+end
+
+@inline function apply_offsets(
+    seconds::Number,
+    from::TimeScaleNode,
+    to::TimeScaleNode,
+)
+    return from.parentid == to.id ? from.ftp(seconds) : to.ffp(seconds)
+end
+
+@inline function _route_offset(from::TimeScaleNode, to::TimeScaleNode)
+    return from.parentid == to.id ? from.ftp : to.ffp
+end
+
+function _resolved_operations(system::TimeSystem, path::Vector{Int})
+    number_of_operations = length(path) - 1
+    number_of_operations > 0 || return TimeNodeWrappers[]
+
+    first_node = get_mappednode(system.scales, path[1])
+    second_node = get_mappednode(system.scales, path[2])
+    first_operation = _route_offset(first_node, second_node)
+    operations = Vector{typeof(first_operation)}(undef, number_of_operations)
+    operations[1] = first_operation
+
+    current = second_node
+    @inbounds for index in 2:number_of_operations
+        following = get_mappednode(system.scales, path[index + 1])
+        operations[index] = _route_offset(current, following)
+        current = following
+    end
+    return operations
+end
+
+# A prepared custom route stores homogeneous, already-compiled wrappers for each supported
+# scalar/dual signature. Route length is data, never a type parameter.
+struct _PreparedRoute{T}
+    scalar::Vector{FunctionWrapper{T,Tuple{T}}}
+    dual1::Vector{FunctionWrapper{_TimeNodeFunAD1{T},Tuple{_TimeNodeFunAD1{T}}}}
+    dual2::Vector{FunctionWrapper{_TimeNodeFunAD2{T},Tuple{_TimeNodeFunAD2{T}}}}
+    fallback::Vector{TimeNodeWrappers}
+end
+
+function _PreparedRoute(::Type{T}, operations) where {T}
+    return _PreparedRoute{T}(
+        FunctionWrapper{T,Tuple{T}}[operation.fw[1] for operation in operations],
+        FunctionWrapper{_TimeNodeFunAD1{T},Tuple{_TimeNodeFunAD1{T}}}[
+            operation.fw[2] for operation in operations
+        ],
+        FunctionWrapper{_TimeNodeFunAD2{T},Tuple{_TimeNodeFunAD2{T}}}[
+            operation.fw[3] for operation in operations
+        ],
+        TimeNodeWrappers[operations...],
+    )
+end
+
+@inline function _evaluate_route(
+    seconds::T,
+    operations::Vector{FunctionWrapper{T,Tuple{T}}},
+) where {T}
+    result = seconds
+    @inbounds for operation in operations
+        result += operation(result)
+    end
+    return result
+end
+
+
+@inline function _evaluate_route_fallback(seconds, operations)
+    result = seconds
+    @inbounds for operation in operations
+        result += operation(result)
+    end
+    return result
+end
+
+@inline function (route::_PreparedRoute{T})(seconds::N) where {T,N<:Number}
+    if N === T
+        return _evaluate_route(seconds, route.scalar)
+    elseif N === _TimeNodeFunAD1{T}
+        return _evaluate_route(seconds, route.dual1)
+    elseif N === _TimeNodeFunAD2{T}
+        return _evaluate_route(seconds, route.dual2)
+    end
+    return _evaluate_route_fallback(seconds, route.fallback)
+end
+
+const _PREPARED_IDENTITY = UInt8(0)
+const _PREPARED_BUILTIN = UInt8(1)
+const _PREPARED_GRAPH = UInt8(2)
+
+"""
+    PreparedTimeConversion{From,To,T}
+
+A compact callable time conversion created by [`prepare_time_conversion`](@ref). The
+resolved operations are a snapshot of the system route at preparation time: later topology
+changes do not alter an existing prepared conversion.
+"""
+struct PreparedTimeConversion{
+    S1<:AbstractTimeScale,
+    S2<:AbstractTimeScale,
+    T<:Number,
+}
+    mode::UInt8
+    route::Union{Nothing,_PreparedRoute{T}}
+end
+
+# Defined for all scales so custom prepared callables remain inferable even though this branch
+# is only selected for supported built-in pairs.
+@noinline _apply_builtin(seconds, from, to) = throw(_conversion_error(from, to))
+@inline _is_builtin_route(::TimeSystem, ::AbstractTimeScale, ::AbstractTimeScale) = false
+
+@inline function (conversion::PreparedTimeConversion{S1,S2})(
+    seconds::Number,
+) where {S1,S2}
+    if conversion.mode == _PREPARED_IDENTITY
+        return seconds
+    elseif conversion.mode == _PREPARED_BUILTIN
+        return _apply_builtin(seconds, S1(), S2())
+    end
+    route = something(conversion.route)
+    return route(seconds)
+end
+
+"""
+    prepare_time_conversion(system, from, to)
+    prepare_time_conversion(from, to; system=TIMESCALES)
+
+Resolve and validate a time-scale route once and return a callable
+[`PreparedTimeConversion`](@ref). Repeated scalar evaluation performs no graph search or node
+lookup. A prepared conversion owns a snapshot of the selected route at preparation time.
+
+# Examples
+```julia
+tai_to_tdb = prepare_time_conversion(TIMESCALES, TAI, TDB)
+tdb_seconds = tai_to_tdb(tai_seconds)
+tdb_epoch = tai_to_tdb(tai_epoch)
+```
+"""
+function prepare_time_conversion(
+    system::TimeSystem{T},
+    from::S1,
+    to::S2,
+) where {T,S1<:AbstractTimeScale,S2<:AbstractTimeScale}
+    if S1 === S2
+        return PreparedTimeConversion{S1,S2,T}(_PREPARED_IDENTITY, nothing)
+    end
+
+    path = _resolve_route(system, from, to)
+    if _is_builtin_route(system, from, to)
+        return PreparedTimeConversion{S1,S2,T}(_PREPARED_BUILTIN, nothing)
+    end
+
+    operations = _resolved_operations(system, path)
+    route = _PreparedRoute(T, operations)
+    return PreparedTimeConversion{S1,S2,T}(_PREPARED_GRAPH, route)
+end
+
+function prepare_time_conversion(
+    from::AbstractTimeScale,
+    to::AbstractTimeScale;
+    system::TimeSystem=TIMESCALES,
+)
+    return prepare_time_conversion(system, from, to)
+end

@@ -89,8 +89,8 @@ function leapseconds(jd2000::Number)
     idx = searchsortedlast(LEAPSECONDS.jd2000, jd2000)
     if idx < 1
         @warn "Leapsecond of date $jd2000 not available, returning 0."
-        return 0.0
+        return zero(float(jd2000))
     end
 
-    return LEAPSECONDS.leap[idx]
+    return oftype(float(jd2000), LEAPSECONDS.leap[idx])
 end

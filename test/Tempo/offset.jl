@@ -50,6 +50,19 @@
         @test Tempo.offset_tt2tdb(1e6) < 1 / 1000
         @test -Tempo.offset_tdb2tt(1e6) < 1 / 1000
     end
+
+    @testset "TT/TDBH published series" begin
+        centuries = 1.0
+        seconds = centuries * Tempo.CENTURY2SEC
+        expected = 0.001657 * sin(628.3076 * centuries + 6.2401) +
+                   0.000022 * sin(575.3385 * centuries + 4.2970) +
+                   0.000014 * sin(1256.6152 * centuries + 6.1969) +
+                   0.000005 * sin(606.9777 * centuries + 4.0212) +
+                   0.000005 * sin(52.9691 * centuries + 0.4444) +
+                   0.000002 * sin(21.3299 * centuries + 5.5431) +
+                   0.000010 * centuries * sin(628.3076 * centuries + 4.2490)
+        @test Tempo.offset_tt2tdbh(seconds) == expected
+    end
 end
 
 @testset "Offset function vs ERFA" verbose = true begin

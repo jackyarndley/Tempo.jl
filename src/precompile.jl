@@ -1,54 +1,19 @@
-
-# Precompilation routines 
+# Representative workloads only: common epoch conversion, prepared default conversion, and
+# one prepared graph route. This avoids an all-pairs precompile matrix.
 PrecompileTools.@setup_workload begin
+    epoch = Epoch(1.0e8 + 0.25, TAI)
+    prepared_builtin = prepare_time_conversion(TAI, TDB)
+
+    custom_system = TimeSystem{Float64}()
+    add_timescale!(custom_system, TT)
+    add_timescale!(custom_system, TAI, offset_tt2tai; parent=TT, ftp=offset_tai2tt)
+    add_timescale!(custom_system, GPS, offset_gps2tai; parent=TAI, ftp=offset_tai2gps)
+    prepared_custom = prepare_time_conversion(custom_system, TT, GPS)
+
     PrecompileTools.@compile_workload begin
-
-        # Precompile Epochs routines for all time scales 
-        for scale in Tempo.TIMESCALES_ACRONYMS
-            epo = Epoch("2022-02-12T12:00:34.3241 $scale")
-            j2000(epo)
-            j2000s(epo)
-            j2000c(epo)
-        end
-
-        # Precompile timescale offset functions 
-        for fcn in (
-            offset_gps2tai,
-            offset_tai2gps,
-            offset_tt2tdbh,
-            offset_utc2tai,
-            offset_tai2utc,
-            offset_tdb2tt,
-            offset_tt2tdb,
-            offset_tdb2tcb,
-            offset_tcb2tdb,
-            offset_tt2tcg,
-            offset_tcg2tt,
-            offset_tt2tai,
-            offset_tai2tt,
-        )
-            fcn(200.0)
-        end
-
-        # Precompile datetime stuff 
-        Date(23)
-        DateTime("2022-02-12T12:00:32")
-        DateTime(21321.034)
-
-        date = Date(2022, 12)
-        dt = DateTime(date, 2312.04)
-
-        Date(dt)
-        Time(dt)
-
-        for fcn in (year, month, day, hour, minute, second)
-            fcn(dt)
-        end
-
-        # Precompile smaller routines
-        tai2utc(DJ2000, 0.0)
-        utc2tai(DJ2000, 0.0)
-        jd2calhms(DJ2000, 0.0)
-        fd2hmsf(0.4)
+        convert(TDB, epoch)
+        prepared_builtin(value(epoch))
+        prepared_custom(value(epoch))
+        DateTime(epoch)
     end
 end

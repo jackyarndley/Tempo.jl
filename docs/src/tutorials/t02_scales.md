@@ -145,6 +145,17 @@ convert(NTSA, e, system=TIMETRANSF)
 
 Whenever the conversions are based on a custom time system, the graph must be provided as an additional argument to the [`convert`](@ref) method. 
 
+When the same conversion is evaluated repeatedly, prepare it once. Preparation validates and
+snapshots the current route, while each call avoids graph traversal and node lookup:
+
+```@repl graph3
+dts_to_ntsa = prepare_time_conversion(TIMETRANSF, DTS, NTSA)
+
+dts_to_ntsa(value(e))
+
+dts_to_ntsa(e)
+```
+
 To conclude the example, we will now add the `NTSB` scale but only register the `NTSA -> NTSB` transformation:
 
 ```@repl graph3

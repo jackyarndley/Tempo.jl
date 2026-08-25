@@ -295,7 +295,7 @@ function jd2cal(dj1::Number, dj2::Number)
     f1, f2 = promote(dj1 - d1, dj2 - d2)     
 
     # Compute f1 + f2 + 0.5 using the compensated summation for improved accuracy.
-    s  = 0.5*one(f1) 
+    s  = oftype(f1, 0.5)
     cs = zero(f1)
 
     for x in (f1, f2)

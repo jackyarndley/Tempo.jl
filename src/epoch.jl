@@ -226,8 +226,12 @@ end
 # ---
 # Type Conversions and Promotions 
 
-Base.convert(::Type{S}, e::Epoch{S}) where {S<:AbstractTimeScale} = e
-Base.convert(::S, e::Epoch{S}) where {S<:AbstractTimeScale} = e
+Base.convert(
+    ::Type{S}, e::Epoch{S}; system::TimeSystem=TIMESCALES
+) where {S<:AbstractTimeScale} = e
+Base.convert(
+    ::S, e::Epoch{S}; system::TimeSystem=TIMESCALES
+) where {S<:AbstractTimeScale} = e
 
 Base.convert(::Type{N}, e::Epoch{S, N}) where {S, N} = e
 Base.convert(::Type{T}, e::Epoch{S, N}) where {S, N, T <: Number} = Epoch{S, T}(e)
@@ -240,19 +244,21 @@ Convert `Epoch` with timescale `S1` to `S2`. Allows to use the default `TimeSyst
 a custom constructed one. 
 """
 function Base.convert(
-    to::S2, e::Epoch{S1}; system::Union{Nothing,TimeSystem} = nothing
-) where {S1 <: AbstractTimeScale, S2 <: AbstractTimeScale}
+    to::S2,
+    epoch::Epoch{S1};
+    system::TimeSystem=TIMESCALES,
+) where {S1<:AbstractTimeScale,S2<:AbstractTimeScale}
+    seconds = apply_offsets(system, value(epoch), timescale(epoch), to)
+    return Epoch{S2}(seconds)
+end
 
-    try
-        seconds = system === nothing ?
-            _default_from_tt(_default_to_tt(value(e), timescale(e)), to) :
-            apply_offsets(system, value(e), timescale(e), to)
-        return Epoch{S2}(seconds)
-
-    catch
-        throw(EpochConversionError("cannot convert Epoch from the timescale $S1 to $S2."))
-    end
-
+function (conversion::PreparedTimeConversion{S1,S2})(
+    epoch::Epoch{S},
+) where {S1,S2,S}
+    S === S1 || throw(ArgumentError(
+        "prepared conversion expects an Epoch{$S1}, but received an Epoch{$S}",
+    ))
+    return Epoch{S2}(conversion(value(epoch)))
 end
 
 """

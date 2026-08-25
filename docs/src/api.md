@@ -41,6 +41,8 @@ MJD2000
 j2000
 j2000s
 j2000c
+PreparedTimeConversion
+prepare_time_conversion
 ```
 
 ## Timescales

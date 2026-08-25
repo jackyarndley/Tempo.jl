@@ -4,19 +4,21 @@
 
 const OFFSET_TAI_TT = 32.184  # seconds 
 
+@inline _constant_like(seconds, constant) = oftype(float(seconds), constant)
+
 """
     offset_tai2tt(seconds)
 
 Return the fixed offset between [`TAI`](@ref) and [`TT`](@ref) in seconds.
 """
-@inline offset_tai2tt(seconds) = OFFSET_TAI_TT
+@inline offset_tai2tt(seconds) = _constant_like(seconds, OFFSET_TAI_TT)
 
 """
     offset_tt2tai(seconds)
 
 Return the fixed offset between [`TT`](@ref) and [`TAI`](@ref) in seconds.
 """
-@inline offset_tt2tai(seconds) = -OFFSET_TAI_TT
+@inline offset_tt2tai(seconds) = -_constant_like(seconds, OFFSET_TAI_TT)
 
 #######
 # TCG #
@@ -31,8 +33,9 @@ const LG_RATE = 6.969290134e-10
 Return the linear offset between [`TCG`](@ref) and [`TT`](@ref) in seconds.
 """
 @inline function offset_tcg2tt(seconds)
-    δt = seconds - JD77_SEC
-    return -LG_RATE * δt
+    value = float(seconds)
+    δt = value - _constant_like(value, JD77_SEC)
+    return -_constant_like(value, LG_RATE) * δt
 end
 
 """
@@ -41,8 +44,10 @@ end
 Return the linear offset between [`TT`](@ref) and [`TCG`](@ref) in seconds.
 """
 @inline function offset_tt2tcg(seconds)
-    rate = LG_RATE / (1 - LG_RATE)
-    δt = seconds - JD77_SEC
+    value = float(seconds)
+    lg_rate = _constant_like(value, LG_RATE)
+    rate = lg_rate / (one(value) - lg_rate)
+    δt = value - _constant_like(value, JD77_SEC)
     return rate * δt
 end
 
@@ -58,8 +63,9 @@ const LB_RATE = 1.550519768e-8
 Return the linear offset between [`TCB`](@ref) and [`TDB`](@ref) in seconds.
 """
 @inline function offset_tcb2tdb(seconds)
-    δt = seconds - JD77_SEC
-    return -LB_RATE * δt
+    value = float(seconds)
+    δt = value - _constant_like(value, JD77_SEC)
+    return -_constant_like(value, LB_RATE) * δt
 end
 
 """
@@ -68,8 +74,10 @@ end
 Return the linear offset between [`TDB`](@ref) and [`TCB`](@ref) in seconds.
 """
 @inline function offset_tdb2tcb(seconds)
-    rate = LB_RATE / (1 - LB_RATE)
-    δt = seconds - JD77_SEC
+    value = float(seconds)
+    lb_rate = _constant_like(value, LB_RATE)
+    rate = lb_rate / (one(value) - lb_rate)
+    δt = value - _constant_like(value, JD77_SEC)
     return rate * δt
 end
 
@@ -98,8 +106,9 @@ This routine is accurate to ~40 microseconds over the interval 1900-2100.
 - [Issue #26](https://github.com/JuliaAstro/AstroTime.jl/issues/26)
 """
 @inline function offset_tt2tdb(seconds)
-    g = m₀ + m₁ * seconds
-    return k * sin(g + eb * sin(g))
+    value = float(seconds)
+    g = _constant_like(value, m₀) + _constant_like(value, m₁) * value
+    return _constant_like(value, k) * sin(g + _constant_like(value, eb) * sin(g))
 end
 
 """
@@ -118,12 +127,14 @@ This routine is accurate to ~40 microseconds over the interval 1900-2100.
 - [Issue #26](https://github.com/JuliaAstro/AstroTime.jl/issues/26)
 """
 @inline function offset_tdb2tt(seconds)
-    tt = seconds
-    offset = zero(seconds)
+    value = float(seconds)
+    tt = value
+    offset = zero(value)
     for _ in 1:3
-        g = m₀ + m₁ * tt
-        offset = -k * sin(g + eb * sin(g))
-        tt = seconds + offset
+        g = _constant_like(value, m₀) + _constant_like(value, m₁) * tt
+        offset = -_constant_like(value, k) *
+                 sin(g + _constant_like(value, eb) * sin(g))
+        tt = value + offset
     end
     return offset
 end
@@ -138,9 +149,10 @@ end
 Return the offset between [`TAI`](@ref) and [`UTC`](@ref) in seconds.
 """
 @inline function offset_tai2utc(seconds)
-    tai = seconds / DAY2SEC
-    _, utc = tai2utc(DJ2000, tai)
-    return (utc - tai) * DAY2SEC
+    day_to_sec = _constant_like(seconds, DAY2SEC)
+    tai = float(seconds) / day_to_sec
+    _, utc = tai2utc(_constant_like(tai, DJ2000), tai)
+    return (utc - tai) * day_to_sec
 end
 
 """
@@ -149,9 +161,10 @@ end
 Return the offset between [`UTC`](@ref) and [`TAI`](@ref) in seconds.
 """
 @inline function offset_utc2tai(seconds)
-    utc = seconds / DAY2SEC
-    _, tai = utc2tai(DJ2000, utc)
-    return (tai - utc) * DAY2SEC
+    day_to_sec = _constant_like(seconds, DAY2SEC)
+    utc = float(seconds) / day_to_sec
+    _, tai = utc2tai(_constant_like(utc, DJ2000), utc)
+    return (tai - utc) * day_to_sec
 end
 
 ########################
@@ -172,14 +185,28 @@ For even more precise applications, the series expansion by
     United States Naval Observatory, https://arxiv.org/pdf/astro-ph/0602086.pdf
 """
 @inline function offset_tt2tdbh(seconds)
-    T = seconds / CENTURY2SEC
-    return 0.001657 * sin(628.3076 * T + 6.2401)
-    +0.000022 * sin(575.3385 * T + 4.2970)
-    +0.000014 * sin(1256.6152 * T + 6.1969)
-    +0.000005 * sin(606.9777 * T + 4.0212)
-    +0.000005 * sin(52.9691 * T + 0.4444)
-    +0.000002 * sin(21.3299 * T + 5.5431)
-    return +0.000010 * T * sin(628.3076 * T + 4.2490)
+    centuries = float(seconds) / _constant_like(seconds, CENTURY2SEC)
+    return _constant_like(centuries, 0.001657) *
+           sin(_constant_like(centuries, 628.3076) * centuries +
+               _constant_like(centuries, 6.2401)) +
+           _constant_like(centuries, 0.000022) *
+           sin(_constant_like(centuries, 575.3385) * centuries +
+               _constant_like(centuries, 4.2970)) +
+           _constant_like(centuries, 0.000014) *
+           sin(_constant_like(centuries, 1256.6152) * centuries +
+               _constant_like(centuries, 6.1969)) +
+           _constant_like(centuries, 0.000005) *
+           sin(_constant_like(centuries, 606.9777) * centuries +
+               _constant_like(centuries, 4.0212)) +
+           _constant_like(centuries, 0.000005) *
+           sin(_constant_like(centuries, 52.9691) * centuries +
+               _constant_like(centuries, 0.4444)) +
+           _constant_like(centuries, 0.000002) *
+           sin(_constant_like(centuries, 21.3299) * centuries +
+               _constant_like(centuries, 5.5431)) +
+           _constant_like(centuries, 0.000010) * centuries *
+           sin(_constant_like(centuries, 628.3076) * centuries +
+               _constant_like(centuries, 4.2490))
 end
 
 #######
@@ -193,11 +220,11 @@ const OFFSET_TAI_GPS = 19  # seconds
 
 Return the fixed offset between [`TAI`](@ref) and [`GPS`](@ref) in seconds.
 """
-@inline offset_tai2gps(seconds) = OFFSET_TAI_GPS
+@inline offset_tai2gps(seconds) = _constant_like(seconds, OFFSET_TAI_GPS)
 
 """
     offset_gps2tai(seconds)
 
 Return the fixed offset between [`GPS`](@ref) and [`TAI`](@ref) in seconds.
 """
-@inline offset_gps2tai(seconds) = -OFFSET_TAI_GPS
+@inline offset_gps2tai(seconds) = -_constant_like(seconds, OFFSET_TAI_GPS)

@@ -43,6 +43,17 @@ tdb = convert(TDB, tai)
 utc = convert(UTC, tai)
 ```
 
+For repeated evaluation, resolve the route once and keep the compact callable:
+
+```julia
+tai_to_tdb = prepare_time_conversion(TIMESCALES, TAI, TDB)
+tdb_seconds = tai_to_tdb(value(tai))
+tdb_epoch = tai_to_tdb(tai)
+```
+
+Prepared conversions snapshot the selected system route when they are constructed. They avoid
+graph search and graph-node lookup during repeated evaluation.
+
 ## Documentation 
 For further information on this package please refer to the [stable documentation](https://juliaspacemissiondesign.github.io/Tempo.jl/stable/)
 

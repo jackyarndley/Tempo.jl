@@ -1,6 +1,7 @@
 module Tempo
 
 using FunctionWrappersWrappers: FunctionWrappersWrapper, AllowAll, NoCache
+using FunctionWrappers: FunctionWrapper
 
 using JSMDInterfaces.Errors: AbstractGenericException, @custom_error
 
@@ -35,10 +36,13 @@ include("parse.jl")
 include("leapseconds.jl")
 include("offset.jl")
 
-export TIMESCALES, @timescale, add_timescale!, 
-       TimeSystem, timescale_alias, timescale_name, timescale_id
-
 include("scales.jl")
+include("system.jl")
+include("conversion.jl")
+include("builtins.jl")
+
+export TIMESCALES, @timescale, add_timescale!, prepare_time_conversion,
+       PreparedTimeConversion, TimeSystem, timescale_alias, timescale_name, timescale_id
 
 export Date, Time,
        year, month, day, find_dayinyear,
