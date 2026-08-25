@@ -449,3 +449,84 @@ add_timescale!(TIMESCALES, TCB, offset_tdb2tcb; parent=TDB, ftp=offset_tcb2tdb)
 add_timescale!(TIMESCALES, UTC, offset_tai2utc; parent=TAI, ftp=offset_utc2tai)
 add_timescale!(TIMESCALES, TDBH, offset_tt2tdbh; parent=TT)
 add_timescale!(TIMESCALES, GPS, offset_gps2tai; parent=TAI, ftp=offset_tai2gps)
+
+# The topology of the built-in time system is fixed. Dispatch its common
+# conversions directly instead of asking the graph for a freshly allocated
+# path on every epoch conversion. Custom TimeSystem instances continue to use
+# the general graph implementation above.
+const _DefaultScaleFrom = Union{
+    TerrestrialTime,
+    BarycentricDynamicalTime,
+    InternationalAtomicTime,
+    GeocentricCoordinateTime,
+    BarycentricCoordinateTime,
+    CoordinatedUniversalTime,
+    GlobalPositioningSystemTime,
+}
+
+const _DefaultScaleTo = Union{
+    _DefaultScaleFrom,
+    HighPrecisionBarycentricDynamicalTime,
+}
+
+@inline _default_to_tt(seconds, ::TerrestrialTime) = seconds
+@inline _default_to_tt(seconds, ::BarycentricDynamicalTime) =
+    seconds + offset_tdb2tt(seconds)
+@inline _default_to_tt(seconds, ::InternationalAtomicTime) =
+    seconds + offset_tai2tt(seconds)
+@inline _default_to_tt(seconds, ::GeocentricCoordinateTime) =
+    seconds + offset_tcg2tt(seconds)
+@inline function _default_to_tt(seconds, ::BarycentricCoordinateTime)
+    tdb = seconds + offset_tcb2tdb(seconds)
+    return tdb + offset_tdb2tt(tdb)
+end
+@inline function _default_to_tt(seconds, ::CoordinatedUniversalTime)
+    tai = seconds + offset_utc2tai(seconds)
+    return tai + offset_tai2tt(tai)
+end
+@inline function _default_to_tt(seconds, ::GlobalPositioningSystemTime)
+    tai = seconds + offset_tai2gps(seconds)
+    return tai + offset_tai2tt(tai)
+end
+
+@inline _default_from_tt(seconds, ::TerrestrialTime) = seconds
+@inline _default_from_tt(seconds, ::BarycentricDynamicalTime) =
+    seconds + offset_tt2tdb(seconds)
+@inline _default_from_tt(seconds, ::InternationalAtomicTime) =
+    seconds + offset_tt2tai(seconds)
+@inline _default_from_tt(seconds, ::GeocentricCoordinateTime) =
+    seconds + offset_tt2tcg(seconds)
+@inline function _default_from_tt(seconds, ::BarycentricCoordinateTime)
+    tdb = seconds + offset_tt2tdb(seconds)
+    return tdb + offset_tdb2tcb(tdb)
+end
+@inline function _default_from_tt(seconds, ::CoordinatedUniversalTime)
+    tai = seconds + offset_tt2tai(seconds)
+    return tai + offset_tai2utc(tai)
+end
+@inline function _default_from_tt(seconds, ::GlobalPositioningSystemTime)
+    tai = seconds + offset_tt2tai(seconds)
+    return tai + offset_gps2tai(tai)
+end
+@inline _default_from_tt(seconds, ::HighPrecisionBarycentricDynamicalTime) =
+    seconds + offset_tt2tdbh(seconds)
+
+@inline function apply_offsets(
+    system::TimeSystem,
+    seconds::Number,
+    from::_DefaultScaleFrom,
+    to::_DefaultScaleTo,
+)
+    if system === TIMESCALES
+        typeof(from) === typeof(to) && return seconds
+        return _default_from_tt(_default_to_tt(seconds, from), to)
+    end
+    return invoke(
+        apply_offsets,
+        Tuple{TimeSystem,Number,AbstractTimeScale,AbstractTimeScale},
+        system,
+        seconds,
+        from,
+        to,
+    )
+end

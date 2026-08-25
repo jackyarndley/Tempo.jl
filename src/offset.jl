@@ -119,7 +119,7 @@ This routine is accurate to ~40 microseconds over the interval 1900-2100.
 """
 @inline function offset_tdb2tt(seconds)
     tt = seconds
-    offset = 0
+    offset = zero(seconds)
     for _ in 1:3
         g = m₀ + m₁ * tt
         offset = -k * sin(g + eb * sin(g))

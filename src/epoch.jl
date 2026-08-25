@@ -240,11 +240,14 @@ Convert `Epoch` with timescale `S1` to `S2`. Allows to use the default `TimeSyst
 a custom constructed one. 
 """
 function Base.convert(
-    to::S2, e::Epoch{S1}; system::TimeSystem = TIMESCALES
+    to::S2, e::Epoch{S1}; system::Union{Nothing,TimeSystem} = nothing
 ) where {S1 <: AbstractTimeScale, S2 <: AbstractTimeScale}
 
     try
-        return Epoch{S2}(apply_offsets(system, value(e), timescale(e), to))
+        seconds = system === nothing ?
+            _default_from_tt(_default_to_tt(value(e), timescale(e)), to) :
+            apply_offsets(system, value(e), timescale(e), to)
+        return Epoch{S2}(seconds)
 
     catch
         throw(EpochConversionError("cannot convert Epoch from the timescale $S1 to $S2."))
