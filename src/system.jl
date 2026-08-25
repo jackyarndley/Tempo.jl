@@ -1,4 +1,4 @@
-# Function signatures supported without fallback dispatch by time-system offsets.
+# Function signatures stored directly by prepared time-system routes.
 _TagAD1{T} = Autodiff.ForwardDiff.Tag{Autodiff.JSMDDiffTag, T}
 _TimeNodeFunAD1{T} = Autodiff.ForwardDiff.Dual{_TagAD1{T}, T, 1}
 

@@ -43,7 +43,8 @@ function _reference_graph_conversion(system, seconds, from, to)
         timescale_id(from),
         timescale_id(to),
     )
-    return Tempo.apply_offsets(system, seconds, path)
+    return Tempo._evaluate_route(
+        seconds, Tempo._resolved_operations(system, path))
 end
 
 function _allocation_bytes(callable, value)
@@ -62,9 +63,9 @@ end
     epochs = (-1.0e8, 0.0, 8.0e8)
 
     for seconds in epochs, from in sources, to in targets
-        direct = Tempo.apply_offsets(TIMESCALES, seconds, from, to)
-        reference = _reference_graph_conversion(TIMESCALES, seconds, from, to)
-        @test direct == reference
+        prepared = prepare_time_conversion(TIMESCALES, from, to)
+        @test prepared(seconds) ==
+              _reference_graph_conversion(TIMESCALES, seconds, from, to)
     end
 
     # The 2016 leap second changed TAI-UTC from 36 s to 37 s.
@@ -72,10 +73,11 @@ end
     _, after_days = Tempo.calhms2jd(2017, 1, 1, 0, 0, 0.0)
     before = before_days * Tempo.DAY2SEC
     after = after_days * Tempo.DAY2SEC
-    @test Tempo.apply_offsets(TIMESCALES, before, UTC, TAI) - before ≈ 36.0
-    @test Tempo.apply_offsets(TIMESCALES, after, UTC, TAI) - after ≈ 37.0
+    utc_to_tai = prepare_time_conversion(UTC, TAI)
+    @test utc_to_tai(before) - before ≈ 36.0
+    @test utc_to_tai(after) - after ≈ 37.0
     for seconds in (before, after), to in targets
-        @test Tempo.apply_offsets(TIMESCALES, seconds, UTC, to) ==
+        @test prepare_time_conversion(UTC, to)(seconds) ==
               _reference_graph_conversion(TIMESCALES, seconds, UTC, to)
     end
 end
@@ -90,14 +92,14 @@ end
     identity_conversion = prepare_time_conversion(TDBH, TDBH)
 
     @test @inferred(builtin(seconds)) ==
-          Tempo.apply_offsets(TIMESCALES, seconds, TAI, TDB)
+          _reference_graph_conversion(TIMESCALES, seconds, TAI, TDB)
     @test @inferred(builtin_default(seconds)) == builtin(seconds)
     @test @inferred(direct(seconds)) ==
-          Tempo.apply_offsets(DIRECT_PREPARED_SYSTEM, seconds, PRA, PRD)
+          _reference_graph_conversion(DIRECT_PREPARED_SYSTEM, seconds, PRA, PRD)
     @test @inferred(multihop(seconds)) ==
-          Tempo.apply_offsets(PREPARED_SYSTEM, seconds, PRA, PRD)
+          _reference_graph_conversion(PREPARED_SYSTEM, seconds, PRA, PRD)
     @test @inferred(reverse(seconds)) ==
-          Tempo.apply_offsets(PREPARED_SYSTEM, seconds, PRD, PRA)
+          _reference_graph_conversion(PREPARED_SYSTEM, seconds, PRD, PRA)
     @test @inferred(identity_conversion(seconds)) === seconds
 
     epoch = Epoch(seconds, PRA)
@@ -109,8 +111,8 @@ end
     @test_throws EpochConversionError prepare_time_conversion(PREPARED_SYSTEM, PRO, PRA)
     @test_throws EpochConversionError prepare_time_conversion(TIMESCALES, TDBH, TT)
     @test_throws EpochConversionError prepare_time_conversion(TIMESCALES, UT1, TDB)
-    @test_throws EpochConversionError Tempo.apply_offsets(TIMESCALES, seconds, TDBH, TT)
     @test_throws EpochConversionError convert(TDB, Epoch(seconds, UT1))
+    @test !isdefined(Tempo, :apply_offsets)
 
     error_system = TimeSystem{Float64}()
     add_timescale!(error_system, PRA)
@@ -149,7 +151,6 @@ end
             Tempo.offset_tai2utc,
         )
         @test all(offset -> offset(seconds) isa NumericType, offsets)
-        @test Tempo.apply_offsets(TIMESCALES, seconds, UTC, TDB) isa NumericType
         @test prepare_time_conversion(UTC, TDB)(seconds) isa NumericType
         @test prepare_time_conversion(PREPARED_SYSTEM, PRA, PRD)(
             convert(NumericType, seconds),
@@ -174,10 +175,8 @@ end
     seconds = 1.0e8 + 0.25
     epoch = Epoch(seconds, TAI)
     convert_builtin(epoch) = value(convert(TDB, epoch))
-    apply_builtin(value) = Tempo.apply_offsets(TIMESCALES, value, TAI, TDB)
 
     @test _allocation_bytes(convert_builtin, epoch) == 0
-    @test _allocation_bytes(apply_builtin, seconds) == 0
     @test _allocation_bytes(prepare_time_conversion(TAI, TDB), seconds) == 0
     @test _allocation_bytes(prepare_time_conversion(UTC, TDB), seconds) == 0
     @test _allocation_bytes(
@@ -187,7 +186,6 @@ end
 
 @testset "DifferentiationInterface behavior" begin
     seconds = 1.0e8 + 0.25
-    apply_builtin(value) = Tempo.apply_offsets(TIMESCALES, value, TAI, TDB)
     convert_builtin(seconds_value) = value(convert(TDB, Epoch(seconds_value, TAI)))
     prepared_builtin = prepare_time_conversion(TAI, TDB)
     prepared_custom = prepare_time_conversion(PREPARED_SYSTEM, PRA, PRD)
@@ -203,7 +201,7 @@ end
         0.0,
     ) == 1.0
 
-    for callable in (apply_builtin, convert_builtin, prepared_builtin, Tempo.offset_tdb2tt)
+    for callable in (convert_builtin, prepared_builtin, Tempo.offset_tdb2tt)
         derivative = DI.derivative(callable, AUTODIFF_BACKEND, seconds)
         finite_difference = _central_difference(callable, seconds)
         @test derivative ≈ finite_difference rtol=2.0e-8 atol=2.0e-8

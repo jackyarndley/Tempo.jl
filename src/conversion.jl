@@ -18,46 +18,6 @@
     return path
 end
 
-# Same-scale conversion is intentionally trivial, including for scale aliases that are not
-# registered in a particular system.
-@inline apply_offsets(
-    ::TimeSystem,
-    seconds::Number,
-    ::S,
-    ::S,
-) where {S<:AbstractTimeScale} = seconds
-
-function apply_offsets(
-    system::TimeSystem,
-    seconds::Number,
-    from::AbstractTimeScale,
-    to::AbstractTimeScale,
-)
-    return apply_offsets(system, seconds, _resolve_route(system, from, to))
-end
-
-function apply_offsets(system::TimeSystem, seconds::Number, path::Vector{Int})
-    isempty(path) && throw(EpochConversionError("cannot apply an empty time-conversion route."))
-    length(path) == 1 && return seconds
-
-    result = seconds
-    current = get_mappednode(system.scales, path[1])
-    @inbounds for index in 2:length(path)
-        following = get_mappednode(system.scales, path[index])
-        result += apply_offsets(result, current, following)
-        current = following
-    end
-    return result
-end
-
-@inline function apply_offsets(
-    seconds::Number,
-    from::TimeScaleNode,
-    to::TimeScaleNode,
-)
-    return from.parentid == to.id ? from.ftp(seconds) : to.ffp(seconds)
-end
-
 @inline function _route_offset(from::TimeScaleNode, to::TimeScaleNode)
     return from.parentid == to.id ? from.ftp : to.ffp
 end
@@ -85,7 +45,7 @@ struct _PreparedRoute{T}
     scalar::Vector{FunctionWrapper{T,Tuple{T}}}
     dual1::Vector{FunctionWrapper{_TimeNodeFunAD1{T},Tuple{_TimeNodeFunAD1{T}}}}
     dual2::Vector{FunctionWrapper{_TimeNodeFunAD2{T},Tuple{_TimeNodeFunAD2{T}}}}
-    fallback::Vector{TimeNodeWrappers}
+    generic::Vector{TimeNodeWrappers}
 end
 
 _wrapper_vector(::Type{T}, operations, ::Val{I}) where {T,I} =
@@ -116,7 +76,7 @@ end
     elseif N === _TimeNodeFunAD2{T}
         return _evaluate_route(seconds, route.dual2)
     end
-    return _evaluate_route(seconds, route.fallback)
+    return _evaluate_route(seconds, route.generic)
 end
 
 """
@@ -171,11 +131,11 @@ function prepare_time_conversion(
         return PreparedTimeConversion{S1,S2,T}(nothing)
     end
 
-    path = _resolve_route(system, from, to)
     if _is_builtin_route(system, from, to)
         return PreparedTimeConversion{S1,S2,T}(nothing)
     end
 
+    path = _resolve_route(system, from, to)
     route = _PreparedRoute(T, _resolved_operations(system, path))
     return PreparedTimeConversion{S1,S2,T}(route)
 end

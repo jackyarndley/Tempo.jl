@@ -248,7 +248,8 @@ function Base.convert(
     epoch::Epoch{S1};
     system::TimeSystem=TIMESCALES,
 ) where {S1<:AbstractTimeScale,S2<:AbstractTimeScale}
-    seconds = apply_offsets(system, value(epoch), timescale(epoch), to)
+    conversion = prepare_time_conversion(system, timescale(epoch), to)
+    seconds = conversion(value(epoch))
     return Epoch{S2}(seconds)
 end
 

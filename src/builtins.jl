@@ -123,15 +123,6 @@ end
     return _default_from_tt(_default_to_tt(seconds, from), to)
 end
 
-@inline function apply_offsets(
-    ::TimeSystem{T,true},
-    seconds::Number,
-    from::_DefaultScaleFrom,
-    to::_DefaultScaleTo,
-) where {T}
-    return _apply_builtin(seconds, from, to)
-end
-
 @inline function _is_builtin_route(
     ::TimeSystem{T,true},
     ::_DefaultScaleFrom,

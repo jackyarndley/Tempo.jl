@@ -22,11 +22,14 @@ Tempo.add_timescale!(S, CTS, _one_offset; parent=BTS, ftp=_mone_offset)
 
 struct CustomTimeScale <: Tempo.AbstractTimeScale end
 
+convert_seconds(system, seconds, from, to) =
+    prepare_time_conversion(system, from, to)(seconds)
+
 @testset "TimeSystem" verbose = true begin
-    @test Tempo.apply_offsets(S, 0.0, ATS, CTS) ≈ 2.0
-    @test Tempo.apply_offsets(S, 0.0, CTS, ATS) ≈ -2.0
-    @test Tempo.apply_offsets(S, 0.0, ATS, BTS) ≈ 1.0
-    @test Tempo.apply_offsets(S, 0.0, BTS, ATS) ≈ -1.0
+    @test convert_seconds(S, 0.0, ATS, CTS) ≈ 2.0
+    @test convert_seconds(S, 0.0, CTS, ATS) ≈ -2.0
+    @test convert_seconds(S, 0.0, ATS, BTS) ≈ 1.0
+    @test convert_seconds(S, 0.0, BTS, ATS) ≈ -1.0
 
     @test Tempo.timescale_alias(1) == 1
     @test isnothing(Tempo.timescale_id(CustomTimeScale()))
@@ -39,7 +42,7 @@ struct CustomTimeScale <: Tempo.AbstractTimeScale end
     # parent not registered 
     @test_throws Exception Tempo.add_timescale!(S, ETS, Tempo._zero_offset; parent=DTS)
 
-    @testset "apply_offsets" begin
+    @testset "prepared conversions" begin
         D2S = 86400.0
 
         utc1, utc2 = Tempo.calhms2jd(2022, 1, 1, 12, 0, 0.0)
@@ -50,43 +53,43 @@ struct CustomTimeScale <: Tempo.AbstractTimeScale end
         j2000s_utc = utc2 * D2S
 
         # TAI
-        @test Tempo.apply_offsets(TIMESCALES, j2000s_utc, UTC, TAI) - j2000s_utc ≈
+        @test convert_seconds(TIMESCALES, j2000s_utc, UTC, TAI) - j2000s_utc ≈
             Tempo.leapseconds(utc2)
-        @test Tempo.apply_offsets(TIMESCALES, j2000s_utc, UTC, TAI) - j2000s_utc ≈ 37.0
+        @test convert_seconds(TIMESCALES, j2000s_utc, UTC, TAI) - j2000s_utc ≈ 37.0
 
         # Same scale (no offset applied)
         for s in Tempo.TIMESCALES_ACRONYMS
             @eval begin
-                @test Tempo.apply_offsets(TIMESCALES, 0.0, $s, $s) == 0.0
+                @test convert_seconds(TIMESCALES, 0.0, $s, $s) == 0.0
             end
         end
 
         # TT 
-        @test Tempo.apply_offsets(TIMESCALES, 0.0, TAI, TT) == 32.184
-        @test Tempo.apply_offsets(TIMESCALES, j2000s_utc, UTC, TT) - j2000s_utc ≈ 69.184
-        @test Tempo.apply_offsets(
-            TIMESCALES, Tempo.apply_offsets(TIMESCALES, j2000s_utc, UTC, TAI), TAI, TT
-        ) ≈ Tempo.apply_offsets(TIMESCALES, j2000s_utc, UTC, TT)
+        @test convert_seconds(TIMESCALES, 0.0, TAI, TT) == 32.184
+        @test convert_seconds(TIMESCALES, j2000s_utc, UTC, TT) - j2000s_utc ≈ 69.184
+        @test convert_seconds(TIMESCALES,
+            convert_seconds(TIMESCALES, j2000s_utc, UTC, TAI), TAI, TT
+        ) ≈ convert_seconds(TIMESCALES, j2000s_utc, UTC, TT)
 
         # Example from Vallado 
         jd2000, dutc = Tempo.calhms2jd(2004, 5, 14, 10, 43, 0.0)
         sutc = dutc * D2S
 
         # UTC - TAI
-        stai = Tempo.apply_offsets(TIMESCALES, sutc, UTC, TAI)
+        stai = convert_seconds(TIMESCALES, sutc, UTC, TAI)
         dtai = stai / D2S
         @test all(Tempo.jd2calhms(jd2000, dtai) .≈ (2004, 5, 14, 10, 43, 32.0))
 
         # UTC - TT 
-        stt = Tempo.apply_offsets(TIMESCALES, sutc, UTC, TT)
+        stt = convert_seconds(TIMESCALES, sutc, UTC, TT)
         dtt = stt / D2S
         @test all(Tempo.jd2calhms(jd2000, dtt) .≈ (2004, 5, 14, 10, 44, 4.1840))
         @test Tempo.jd2calhms(
-            jd2000, Tempo.apply_offsets(TIMESCALES, stai, TAI, TT) / D2S
+            jd2000, convert_seconds(TIMESCALES, stai, TAI, TT) / D2S
         ) == Tempo.jd2calhms(jd2000, dtt)
 
         # UTC - TCB 
-        stcb = Tempo.apply_offsets(TIMESCALES, sutc, UTC, TCB)
+        stcb = convert_seconds(TIMESCALES, sutc, UTC, TCB)
         dtcb = stcb / D2S
         @test all(
             isapprox.(
@@ -95,7 +98,7 @@ struct CustomTimeScale <: Tempo.AbstractTimeScale end
         )
 
         # UTC - TDB 
-        stdb = Tempo.apply_offsets(TIMESCALES, sutc, UTC, TDB)
+        stdb = convert_seconds(TIMESCALES, sutc, UTC, TDB)
         dtdb = stdb / D2S
         @test all(
             isapprox.(
