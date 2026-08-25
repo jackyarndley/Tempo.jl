@@ -8,7 +8,6 @@ FunctionWrappersWrappers = "77dc65aa-8811-40c2-897b-53d922fa7daf"
 FunctionWrappers = "069b7b12-0de2-55c6-9aab-29f3d0a68a2e"
 JSMDInterfaces = "6b30ee2f-618e-4a15-bf4e-7df7b496e609"
 JSMDUtils = "67801824-9821-48b9-a814-9bfb19231086"
-Pkg = "44cfe95a-1eb2-52ea-b672-e2afdf69b78f"
 PrecompileTools = "aea7be01-6a6a-4083-8856-8a6e6704d82a"
 SMDGraphs = "b792745b-7241-45be-ba96-70eb67e8468f"
 
@@ -16,8 +15,10 @@ SMDGraphs = "b792745b-7241-45be-ba96-70eb67e8468f"
 JSMDUtils = {rev = "main", url = "https://github.com/jackyarndley/JSMDUtils.jl"}
 
 [compat]
+DifferentiationInterface = "0.6.7, 0.7"
 FunctionWrappersWrappers = "1"
 FunctionWrappers = "1"
+ForwardDiff = "0.10.36, 1"
 JSMDInterfaces = "1.5"
 JSMDUtils = "1"
 PrecompileTools = "1"
@@ -25,7 +26,9 @@ SMDGraphs = "0.2"
 julia = "1.8"
 
 [extras]
+DifferentiationInterface = "a0c0ee7d-e4b9-4e03-894e-1c5f64a51d63"
+ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [targets]
-test = ["Test"]
+test = ["DifferentiationInterface", "ForwardDiff", "Test"]

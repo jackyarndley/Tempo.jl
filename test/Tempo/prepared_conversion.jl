@@ -1,6 +1,9 @@
 import Tempo: timescale_id, timescale_name
+import DifferentiationInterface as DI
+# Used only to construct the exact nested-dual signatures supported by TimeSystem wrappers.
+import ForwardDiff
 
-const ForwardDiff = Tempo.Autodiff.ForwardDiff
+const AUTODIFF_BACKEND = DI.AutoForwardDiff()
 
 @timescale PRA 101 PreparedRootTimeScale
 @timescale PRB 102 PreparedBranchTimeScale
@@ -117,7 +120,7 @@ end
     # Route length and individual function types are data, not public type parameters.
     @test typeof(direct) === typeof(multihop)
     @test fieldtypes(typeof(multihop)) ==
-          (UInt8, Union{Nothing,Tempo._PreparedRoute{Float64}})
+          (Union{Nothing,Tempo._PreparedRoute{Float64}},)
     @test !occursin("FunctionWrapper", string(typeof(multihop)))
     @test !occursin("#", string(typeof(multihop)))
 
@@ -182,20 +185,31 @@ end
     ) == 0
 end
 
-@testset "ForwardDiff behavior" begin
+@testset "DifferentiationInterface behavior" begin
     seconds = 1.0e8 + 0.25
     apply_builtin(value) = Tempo.apply_offsets(TIMESCALES, value, TAI, TDB)
     convert_builtin(seconds_value) = value(convert(TDB, Epoch(seconds_value, TAI)))
     prepared_builtin = prepare_time_conversion(TAI, TDB)
     prepared_custom = prepare_time_conversion(PREPARED_SYSTEM, PRA, PRD)
 
+    @test DI.derivative(
+        seconds_value -> value(Epoch(seconds_value, TAI)),
+        AUTODIFF_BACKEND,
+        0.0,
+    ) == 1.0
+    @test DI.derivative(
+        elapsed -> value(Epoch(0.25, TAI) + elapsed),
+        AUTODIFF_BACKEND,
+        0.0,
+    ) == 1.0
+
     for callable in (apply_builtin, convert_builtin, prepared_builtin, Tempo.offset_tdb2tt)
-        derivative = ForwardDiff.derivative(callable, seconds)
+        derivative = DI.derivative(callable, AUTODIFF_BACKEND, seconds)
         finite_difference = _central_difference(callable, seconds)
         @test derivative ≈ finite_difference rtol=2.0e-8 atol=2.0e-8
     end
 
     expected_custom_derivative = (1.0 + 1.0e-6) * (1.0 + 2.0e-6)
-    @test ForwardDiff.derivative(prepared_custom, seconds) ≈
+    @test DI.derivative(prepared_custom, AUTODIFF_BACKEND, seconds) ≈
           expected_custom_derivative rtol=1.0e-12
 end

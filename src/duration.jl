@@ -39,14 +39,17 @@ struct Duration{T} <: Number
     fraction::T 
 end
 
-function Duration{T}(seconds::Number) where {T <: Number}
-    i,f = divrem(seconds, 1)
-    return Duration{T}(convert(Int, i), T(f))
+@inline function _split_seconds(value)
+    whole = trunc(Int, value)
+    return whole, value - whole
 end
 
-function Duration(seconds::T) where {T <: Number}
-    Duration{T}(seconds)  
-end 
+function Duration{T}(seconds::Number) where {T <: Number}
+    i, f = _split_seconds(seconds)
+    return Duration{T}(i, T(f))
+end
+
+Duration(seconds::T) where {T<:Number} = Duration{T}(seconds)
 
 ftype(::Duration{T}) where T = T
 
@@ -81,45 +84,38 @@ Base.isless(d1::Duration, d2::Duration) = value(d1) < value(d2)
 
 function Base.:+(d::Duration, x::Number)
     es, ef = d.seconds, d.fraction
-    xs, xf = divrem(x, 1)
-    s, f = fmasf(ef, xf, 1)
-    return Duration(convert(Int, es + xs + s), f)
+    xs, xf = _split_seconds(x)
+    s, f = _split_seconds(ef + xf)
+    return Duration(es + xs + s, f)
 end
 
 function Base.:+(d1::Duration, d2::Duration) 
     s1, f1 = d1.seconds, d1.fraction
     s2, f2 = d2.seconds, d2.fraction
-    s, f = fmasf(f1, f2, 1)
-    return Duration(convert(Int, s1 + s2 + s), f)
+    s, f = _split_seconds(f1 + f2)
+    return Duration(s1 + s2 + s, f)
 end
 
 function Base.:-(d::Duration, x::Number)
     es, ef = d.seconds, d.fraction
-    xs, xf = divrem(x, 1)
-    ds, df = divrem(ef - xf, 1)
+    xs, xf = _split_seconds(x)
+    ds, df = _split_seconds(ef - xf)
     sec = es - xs + ds
     if df < 0
         sec -= 1
         df += 1
     end
-    return Duration(convert(Int, sec), df)
+    return Duration(sec, df)
 end
 
 function Base.:-(d1::Duration, d2::Duration) 
     s1, f1 = d1.seconds, d1.fraction
     s2, f2 = d2.seconds, d2.fraction
-    ds, df = divrem(f1 - f2, 1)
+    ds, df = _split_seconds(f1 - f2)
     sec = s1 - s2 + ds 
     if df < 0
         sec -= 1
         df += 1
     end
-    return Duration(convert(Int, sec), df)
-end
-
-
-function fmasf(a, b, mul)
-    amulb = fma(mul, a, b)
-    i, f = divrem(amulb, 1)
-    return i, f 
+    return Duration(sec, df)
 end

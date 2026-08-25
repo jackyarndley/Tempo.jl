@@ -12,17 +12,15 @@ using JSMDInterfaces.Graph:
     get_path,
     has_vertex
 
-using JSMDUtils
-using JSMDUtils.Autodiff
+using JSMDUtils: format_camelcase
+import JSMDUtils.Autodiff
 
-using Pkg.Artifacts
 using PrecompileTools: PrecompileTools
 
 using SMDGraphs:
     MappedNodeGraph,
     MappedDiGraph,
     SimpleDiGraph,
-    get_mappedid,
     get_mappednode
 
 import SMDGraphs: get_node_id

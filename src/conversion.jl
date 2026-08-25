@@ -64,8 +64,6 @@ end
 
 function _resolved_operations(system::TimeSystem, path::Vector{Int})
     number_of_operations = length(path) - 1
-    number_of_operations > 0 || return TimeNodeWrappers[]
-
     first_node = get_mappednode(system.scales, path[1])
     second_node = get_mappednode(system.scales, path[2])
     first_operation = _route_offset(first_node, second_node)
@@ -90,32 +88,19 @@ struct _PreparedRoute{T}
     fallback::Vector{TimeNodeWrappers}
 end
 
+_wrapper_vector(::Type{T}, operations, ::Val{I}) where {T,I} =
+    FunctionWrapper{T,Tuple{T}}[operation.fw[I] for operation in operations]
+
 function _PreparedRoute(::Type{T}, operations) where {T}
     return _PreparedRoute{T}(
-        FunctionWrapper{T,Tuple{T}}[operation.fw[1] for operation in operations],
-        FunctionWrapper{_TimeNodeFunAD1{T},Tuple{_TimeNodeFunAD1{T}}}[
-            operation.fw[2] for operation in operations
-        ],
-        FunctionWrapper{_TimeNodeFunAD2{T},Tuple{_TimeNodeFunAD2{T}}}[
-            operation.fw[3] for operation in operations
-        ],
+        _wrapper_vector(T, operations, Val(1)),
+        _wrapper_vector(_TimeNodeFunAD1{T}, operations, Val(2)),
+        _wrapper_vector(_TimeNodeFunAD2{T}, operations, Val(3)),
         TimeNodeWrappers[operations...],
     )
 end
 
-@inline function _evaluate_route(
-    seconds::T,
-    operations::Vector{FunctionWrapper{T,Tuple{T}}},
-) where {T}
-    result = seconds
-    @inbounds for operation in operations
-        result += operation(result)
-    end
-    return result
-end
-
-
-@inline function _evaluate_route_fallback(seconds, operations)
+@inline function _evaluate_route(seconds, operations)
     result = seconds
     @inbounds for operation in operations
         result += operation(result)
@@ -131,12 +116,8 @@ end
     elseif N === _TimeNodeFunAD2{T}
         return _evaluate_route(seconds, route.dual2)
     end
-    return _evaluate_route_fallback(seconds, route.fallback)
+    return _evaluate_route(seconds, route.fallback)
 end
-
-const _PREPARED_IDENTITY = UInt8(0)
-const _PREPARED_BUILTIN = UInt8(1)
-const _PREPARED_GRAPH = UInt8(2)
 
 """
     PreparedTimeConversion{From,To,T}
@@ -150,7 +131,6 @@ struct PreparedTimeConversion{
     S2<:AbstractTimeScale,
     T<:Number,
 }
-    mode::UInt8
     route::Union{Nothing,_PreparedRoute{T}}
 end
 
@@ -162,13 +142,9 @@ end
 @inline function (conversion::PreparedTimeConversion{S1,S2})(
     seconds::Number,
 ) where {S1,S2}
-    if conversion.mode == _PREPARED_IDENTITY
-        return seconds
-    elseif conversion.mode == _PREPARED_BUILTIN
-        return _apply_builtin(seconds, S1(), S2())
-    end
-    route = something(conversion.route)
-    return route(seconds)
+    S1 === S2 && return seconds
+    isnothing(conversion.route) && return _apply_builtin(seconds, S1(), S2())
+    return conversion.route(seconds)
 end
 
 """
@@ -192,17 +168,16 @@ function prepare_time_conversion(
     to::S2,
 ) where {T,S1<:AbstractTimeScale,S2<:AbstractTimeScale}
     if S1 === S2
-        return PreparedTimeConversion{S1,S2,T}(_PREPARED_IDENTITY, nothing)
+        return PreparedTimeConversion{S1,S2,T}(nothing)
     end
 
     path = _resolve_route(system, from, to)
     if _is_builtin_route(system, from, to)
-        return PreparedTimeConversion{S1,S2,T}(_PREPARED_BUILTIN, nothing)
+        return PreparedTimeConversion{S1,S2,T}(nothing)
     end
 
-    operations = _resolved_operations(system, path)
-    route = _PreparedRoute(T, operations)
-    return PreparedTimeConversion{S1,S2,T}(_PREPARED_GRAPH, route)
+    route = _PreparedRoute(T, _resolved_operations(system, path))
+    return PreparedTimeConversion{S1,S2,T}(route)
 end
 
 function prepare_time_conversion(

@@ -54,6 +54,14 @@ tdb_epoch = tai_to_tdb(tai)
 Prepared conversions snapshot the selected system route when they are constructed. They avoid
 graph search and graph-node lookup during repeated evaluation.
 
+Use [DifferentiationInterface.jl](https://github.com/JuliaDiff/DifferentiationInterface.jl)
+to differentiate a conversion with the backend selected by the application:
+
+```julia
+import DifferentiationInterface as DI
+derivative = DI.derivative(tai_to_tdb, DI.AutoForwardDiff(), value(tai))
+```
+
 ## Documentation 
 For further information on this package please refer to the [stable documentation](https://juliaspacemissiondesign.github.io/Tempo.jl/stable/)
 
